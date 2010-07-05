@@ -1,10 +1,26 @@
+CC=gcc
+CFLAGS=-ggdb
+LIBUSB=libusb-1.0
+CFLAGS += $(shell pkg-config --cflags $(LIBUSB))
+LDFLAGS += $(shell pkg-config --libs $(LIBUSB))
+
+V=0
+ifeq ($(V), 0)
+  Q:=@
+else
+  Q:=
+endif
+
 all: src/proto
 
 src/proto: src/proto.o
-	gcc -ggdb `pkg-config --cflags libusb-1.0` `pkg-config --libs libusb-1.0` -o src/proto src/proto.o
+	@echo "  LD $@"
+	$(Q)$(CC) $(LDFLAGS) $< -o $@
 
 src/proto.o: src/proto.c src/*.h
-	gcc -ggdb `pkg-config --cflags libusb-1.0` `pkg-config --libs libusb-1.0` -o src/proto.o -c src/proto.c
+	@echo "  CC $@"
+	$(Q)$(CC) $(CFLAGS) -c $< -o $@
 
 clean: 
-	rm src/proto src/proto.o
+	@echo "  RM src/proto src/proto.o"
+	$(Q)rm -f src/proto src/proto.o

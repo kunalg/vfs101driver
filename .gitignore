@@ -1,2 +1,8 @@
-img
-img2
+img*
+UsbSnoop*
+*.log
+*.o
+tags
+TAGS
+cscope.*
+*.orig

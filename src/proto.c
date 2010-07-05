@@ -24,6 +24,13 @@
 #include <stdlib.h>
 #include <libusb-1.0/libusb.h>
 
+#define DEBUG
+
+#ifdef DEBUG
+#define vfs_dbg(fmt...)		fprintf(stderr, "VFS DBG: " fmt)
+#else
+#define vfs_dbg(fmt...)
+#endif
 
 /* The device seems to send back 16 frames of 292 bytes at a time */
 const unsigned int FRAME_SIZE = 292;
@@ -31,6 +38,7 @@ const unsigned int N_FRAMES = 16;
 
 #define nitems(x) (sizeof(x)/sizeof(x[0]))
 
+#define BUF_SIZE 	(4 * 1024 * 1024) // 4MB buffer
 
 /******************************************************************************************************
  * Context structure for this driver.
@@ -55,7 +63,7 @@ struct vfs_dev {
 	int len;
 
 	/* buffer to hold raw image data frames */
-	unsigned char ibuf[1024*1024];
+	unsigned char ibuf[BUF_SIZE];
 	int ilen;
 	int inum;
 
@@ -114,6 +122,7 @@ static void dev_close (struct vfs_dev *dev)
 static void dev_open (struct vfs_dev *dev)
 {
 	int r;
+	unsigned char status;
 
 	if (dev->state != 0)
 		dev_close(dev);
@@ -130,7 +139,7 @@ static void dev_open (struct vfs_dev *dev)
 	}
 	dev->state = 1;
 
-	dev->devh = libusb_open_device_with_vid_pid(NULL, 0x138a, 0x0001);
+	dev->devh = libusb_open_device_with_vid_pid(dev->ctx, 0x138a, 0x0001);
 	if (dev->devh == NULL) {
 		fprintf(stderr, "Can't open validity device!\n");
 		return;
@@ -138,13 +147,21 @@ static void dev_open (struct vfs_dev *dev)
 	dev->state = 2;
 
 	int i = 0;
-	for (i; i < 1000000; i++){
+	for (i; i < 100; i++){
 		r = libusb_kernel_driver_active(dev->devh, i);
 		if ( r == 1 ){
-			r = libusb_detach_kernel_driver(dev->devh, 4);
+			r = libusb_detach_kernel_driver(dev->devh, i);
 			if (r < 0)
-				fprintf(stderr, "Error detaching kernel driver!\n");
+				fprintf(stderr,
+					"Error detaching kernel driver for intf %d!\n", i);
 		}
+	}
+
+	r = libusb_set_configuration(dev->devh, 1);
+	if (r != LIBUSB_SUCCESS) {
+		fprintf(stderr, "usb_set_config error %d\n", r);
+	} else {
+		vfs_dbg("config 1 selected successfully\n");
 	}
 
 	r = libusb_claim_interface(dev->devh, 0);
@@ -161,7 +178,7 @@ static void dev_open (struct vfs_dev *dev)
 	}
 
 	r = libusb_control_transfer(dev->devh, LIBUSB_REQUEST_TYPE_STANDARD, LIBUSB_REQUEST_SET_FEATURE, 1, 1, NULL, 0, 100); 
-        if (r != 0) {
+	if (r != 0) {
 		fprintf(stderr, "device configuring error %d\n", r);
 		return;
 	}
@@ -581,12 +598,15 @@ static int recv(struct vfs_dev *dev)
 static int load (struct vfs_dev *dev, unsigned char *buf, int *len)
 {
 	int n;
+	int try = 0;
 
 	*len = 0;
 
 	do {
+		vfs_dbg("beginning of the loop..\n");
 		int r = libusb_bulk_transfer(dev->devh, EP_IN(2), buf, N_FRAMES*FRAME_SIZE, &n, BULK_TIMEOUT);
 
+		vfs_dbg("%s: r=%d, n=%d, try=%d\n", __FUNCTION__, r, n, try++);
 		buf += n;
 		*len += n;
 
@@ -1071,6 +1091,7 @@ static int scan_contrast (struct vfs_dev *dev)
 #include "state0.h"
 #include "state1.h"
 #include "state2.h"
+
 static int woot (struct vfs_dev *dev)
 {
 	S0_unchecked(dev);
